@@ -46,8 +46,8 @@ shows up next to it while there are unsaved changes, "✓ Saved" when there are 
 to `source-images/mock/shots.json`; `node tools/mock-cases.mjs` in the site renders saved shots
 with them and the rest with presets. The frame shows the case's CSS mesh behind the transparent
 render; on the Skybox tab its colours can be changed and saved into the site's `styles.css`
-("Save background to case"; reflections need a re-render). In case mode the aspect is locked,
-because it comes from the slot on the case page. The batch renderer opens the page with
+("Save background to case"; reflections need a re-render). A shot's aspect starts from the slot it
+fills on the case page; if you change it, the page crops the image to the slot (object-fit: cover). The batch renderer opens the page with
 `?render=1`, which leaves the Cases panel out.
 
 ## Tabs
@@ -55,11 +55,15 @@ because it comes from the slot on the case page. The batch renderer opens the pa
 - **Thing**: device (with the screenshot size that fills its screen), Animate, camera
   (Angle X/Y/Z = pitch/yaw/roll, Position X/Y = pan), blur (Strength, Size, Position X/Y,
   Angle or Smart angle that follows Angle Z, Top/Bottom strength and size), screen, light, export.
-- **Skybox**, in two parts. *Background*: type (mesh gradient, photo or gradient), "In the
-  render" (off = transparent PNG), its colours; the two mesh glows are moved by dragging their
-  dots on the preview (saved to the case as `--p1`/`--p2`). *Reflections*: how strongly that
-  background shows up on the device, and its rotation. In case mode the background is always
-  drawn by the site's CSS, so "In the render" is locked off.
+- **Skybox**, in two parts.
+  - *Background*: Show (off = transparent PNG; in case mode, where the site draws the
+    background in CSS and the render is always transparent, it hides it in the preview), type
+    (mesh gradient, photo or gradient), its colours; the two mesh glows are moved by dragging
+    their dots on the preview (saved to the case as `--p1`/`--p2`).
+  - *Lighting*: Background glow (how strongly the background's colours reflect on the device),
+    Rotate, and a Light gradient (`scene.light`) that can be switched off: a map around the
+    device (back · left · front · right · back). Click it to add a point, drag to move,
+    double-click to delete; the selected point has colour, size and power.
 - **Undo**: Cmd/Ctrl+Z, redo Cmd/Ctrl+Shift+Z. A run of quick changes to one setting (arrow
   keys, a slider drag, a mouse drag on the preview) is one step; undo stays within one case screen.
 - **Animate** (`src/anim.js`): a timeline under the stage. "＋ Key" stores the Thing settings at

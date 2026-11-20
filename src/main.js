@@ -28,6 +28,12 @@ const DEFAULTS = {
     bgTop: '#f2f2f3', bgBottom: '#c9cacf', transparent: false, meshOn: false, mesh: ['#7c5cff', '#ff7a59', '#f1f1f2', '#d9d9dc'], meshReflect: 1.5,
     meshPos: [0.72, 0.38, 0.22, 0.82],
     photoOn: false, photoReflect: 1, envIntensity: 1, envRotation: 0,
+    // light gradient: soft coloured lights around the device, independent of the background.
+    // x 0..1 = around (0.5 in front of the screen), y 0..1 = top..bottom, size, power
+    light: { on: false, strength: 1, points: [
+      { x: 0.38, y: 0.22, color: '#ffffff', size: 0.3, power: 3 },
+      { x: 0.72, y: 0.42, color: '#ffd9b0', size: 0.22, power: 2 },
+    ] },
     keyLight: 1.2, exposure: 1, tone: 'None', grain: 1.5,
   },
   screen: { fit: 'cover', align: 'center', flipX: false, flipY: false, rotate: 0, brightness: 1 },
@@ -51,11 +57,22 @@ const blurPass = new BlurPass(renderer);
 const pmrem = new THREE.PMREMGenerator(renderer);
 let photoTex = null, photoId = 0, photoAspect = 1; // Skybox photo (not part of the state: too big)
 let envTex = null, envKey = '';
+let discTex = null;
+function softDisc() {
+  if (discTex) return discTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.65)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128);
+  return (discTex = new THREE.CanvasTexture(c));
+}
 function buildEnv() {
   const usePhoto = S.scene.photoOn && photoTex;
   const k = (S.scene.meshOn ? S.scene.mesh.join() + S.scene.meshReflect : usePhoto ? '' : S.scene.bgTop + S.scene.bgBottom + S.scene.meshReflect) + (usePhoto ? photoId + ':' + S.scene.photoReflect : '');
-  if (envTex && k === envKey) return;
-  envKey = k;
+  const L = S.scene.light;
+  const kk = k + (L?.on ? JSON.stringify(L) : '');
+  if (envTex && kk === envKey) return;
+  envKey = kk;
   const room = new RoomEnvironment();
   if (S.scene.meshOn) {
     // brand-coloured emissive panels around the room: they show up as reflections on glass/metal
@@ -82,6 +99,18 @@ function buildEnv() {
     for (const [x, y, z, ry] of [[0, 2.5, -5, 0], [-5, 2.5, 0, Math.PI / 2], [5, 2.5, 0, -Math.PI / 2], [0, 2.5, 5, Math.PI]]) {
       const pl = new THREE.Mesh(new THREE.PlaneGeometry(9, 6), mat);
       pl.position.set(x, y, z); pl.rotation.y = ry; room.add(pl);
+    }
+  }
+  if (L?.on) {
+    // each point of the light gradient is a soft glowing disc on a sphere around the device
+    for (const p of L.points) {
+      const a = (p.x - 0.5) * Math.PI * 2, e = (0.5 - p.y) * Math.PI;
+      const mat = new THREE.MeshBasicMaterial({ map: softDisc(), color: new THREE.Color(p.color).multiplyScalar(p.power * L.strength), transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, blending: THREE.AdditiveBlending });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      m.scale.setScalar(Math.max(0.05, p.size) * 9);
+      m.position.set(Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)).multiplyScalar(4);
+      m.lookAt(0, 0, 0);
+      room.add(m);
     }
   }
   envTex?.dispose();
@@ -522,19 +551,23 @@ fExp.addButton({ title: 'Save preset (JSON)' }).on('click', () => {
 fExp.addButton({ title: 'Load preset…' }).on('click', () => presetInput.click());
 fExp.addButton({ title: 'Reset all' }).on('click', () => { setState(structuredClone(DEFAULTS)); });
 
-// Skybox, in two parts: the background itself (what you see behind the device) and its
-// reflections (how much of it shows up in the glass and aluminium)
+// Skybox, in two parts: the background (what you see behind the device, can be switched off)
+// and the lighting (what the device reflects: the background's colours and/or a light gradient
+// of points you add, move and remove)
+let caseMode = false, caseBgOff = false;
 const skyUI = {
   get bg() { return S.scene.photoOn && photoTex ? 'photo' : S.scene.meshOn ? 'mesh' : 'plain'; },
   set bg(v) { S.scene.meshOn = v === 'mesh'; S.scene.photoOn = v === 'photo' && !!photoTex; if (v === 'photo' && !photoTex) photoInput.click(); },
-  get show() { return !S.scene.transparent; },
-  set show(v) { S.scene.transparent = !v; },
+  // in case mode the site draws the background in CSS and the render is always transparent:
+  // the switch then shows or hides it in the preview
+  get show() { return caseMode ? !caseBgOff : !S.scene.transparent; },
+  set show(v) { if (caseMode) { caseBgOff = !v; frame.classList.toggle('no-bg', caseBgOff); } else S.scene.transparent = !v; },
   get reflect() { return skyUI.bg === 'photo' ? S.scene.photoReflect : S.scene.meshReflect; },
   set reflect(v) { if (skyUI.bg === 'photo') S.scene.photoReflect = v; else S.scene.meshReflect = v; },
 };
 const fBg = sky.addFolder({ title: 'Background' });
+const showBinding = fBg.addBinding(skyUI, 'show', { label: 'Show' });
 const bgBinding = fBg.addBinding(skyUI, 'bg', { label: 'Type', options: { 'Mesh gradient': 'mesh', Photo: 'photo', Gradient: 'plain' } });
-const showBinding = fBg.addBinding(skyUI, 'show', { label: 'In the render' });
 const meshColors = ['Glow 1', 'Glow 2', 'Base 1', 'Base 2'].map((n, i) => fBg.addBinding(S.scene.mesh, i, { label: n, view: 'color' }));
 const meshHint = fBg.addBlade({ view: 'text', label: 'Glows', parse: (v) => v, value: 'drag the dots in the preview', disabled: true });
 const photoBtns = [
@@ -542,9 +575,87 @@ const photoBtns = [
   fBg.addButton({ title: 'Remove photo' }).on('click', () => { clearPhoto(); S.scene.meshOn = true; pane.refresh(); syncPane(); applyAll(); }),
 ];
 const plainColors = [fBg.addBinding(S.scene, 'bgTop', { label: 'Top', view: 'color' }), fBg.addBinding(S.scene, 'bgBottom', { label: 'Bottom', view: 'color' })];
-const fRefl = sky.addFolder({ title: 'Reflections' });
-fRefl.addBinding(skyUI, 'reflect', { label: 'Strength', min: 0, max: 8, step: 0.05 });
-fRefl.addBinding(S.scene, 'envRotation', { label: 'Rotate', min: -180, max: 180, step: 1 });
+
+const fLit = sky.addFolder({ title: 'Lighting' });
+fLit.addBinding(skyUI, 'reflect', { label: 'Background glow', min: 0, max: 8, step: 0.05 });
+fLit.addBinding(S.scene, 'envRotation', { label: 'Rotate', min: -180, max: 180, step: 1 });
+fLit.addBinding(S.scene.light, 'on', { label: 'Light gradient' });
+const litStrength = fLit.addBinding(S.scene.light, 'strength', { label: 'Strength', min: 0, max: 4, step: 0.01 });
+// the editor: a map around the device (left · front · right · back), click to add a point,
+// drag to move, select to recolour; Delete removes the selected one
+const litMap = (() => {
+  const el = document.createElement('div');
+  el.className = 'lit-map';
+  el.innerHTML = '<canvas width="300" height="150"></canvas><div class="lit-axis"><span>back</span><span>left</span><span>front</span><span>right</span><span>back</span></div>';
+  const cv = el.querySelector('canvas');
+  litStrength.element.after(el);
+  let sel = 0;
+  const lastDown = { i: -1, t: 0 };
+  const P = () => S.scene.light.points;
+  function draw() {
+    const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#131417'; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'lighter';
+    for (const p of P()) {
+      const r = g.createRadialGradient(p.x * W, p.y * H, 0, p.x * W, p.y * H, p.size * W * 0.5);
+      const a = Math.min(1, 0.25 + p.power / 4);
+      r.addColorStop(0, p.color); r.addColorStop(1, p.color + '00');
+      g.globalAlpha = a; g.fillStyle = r; g.fillRect(0, 0, W, H);
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+    // keep the dot elements (rebuild only when points are added or removed), so a drag in
+    // progress never loses its element
+    let dots = [...el.querySelectorAll('.lit-dot')];
+    if (dots.length !== P().length) {
+      dots.forEach((d) => d.remove());
+      dots = P().map((_, i) => {
+        const d = document.createElement('div');
+        d.className = 'lit-dot';
+        d.title = 'Drag to move · double-click to delete';
+        d.onpointerdown = (e) => {
+          e.stopPropagation(); e.preventDefault();
+          const now = performance.now();
+          if (lastDown.i === i && now - lastDown.t < 350) { lastDown.i = -1; remove(i); return; }
+          lastDown.i = i; lastDown.t = now;
+          sel = i; selUI.refresh(); draw();
+          const move = (ev) => {
+            const r = cv.getBoundingClientRect(), p = P()[i]; if (!p) return;
+            p.x = clamp01((ev.clientX - r.left) / r.width); p.y = clamp01((ev.clientY - r.top) / r.height);
+            changed();
+          };
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+          window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+        };
+        el.appendChild(d);
+        return d;
+      });
+    }
+    P().forEach((p, i) => {
+      const d = dots[i];
+      d.classList.toggle('on', i === sel);
+      d.style.left = p.x * 100 + '%'; d.style.top = p.y * 100 + '%'; d.style.background = p.color;
+    });
+    el.classList.toggle('off', !S.scene.light.on);
+  }
+  const clamp01 = (v) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+  function changed() { draw(); applyAll(); hooks.forEach((h) => h({ target: { key: 'light' } })); }
+  function remove(i) { P().splice(i, 1); sel = Math.min(sel, P().length - 1); selUI.refresh(); changed(); }
+  cv.addEventListener('pointerdown', (e) => {
+    const r = cv.getBoundingClientRect();
+    P().push({ x: clamp01((e.clientX - r.left) / r.width), y: clamp01((e.clientY - r.top) / r.height), color: '#ffffff', size: 0.25, power: 2 });
+    sel = P().length - 1; S.scene.light.on = true; quietRefresh(); selUI.refresh(); changed();
+  });
+  // the selected point's settings
+  const proxy = {};
+  for (const k of ['color', 'size', 'power']) Object.defineProperty(proxy, k, { get: () => P()[sel]?.[k] ?? (k === 'color' ? '#ffffff' : 0), set: (v) => { if (P()[sel]) { P()[sel][k] = v; draw(); } } });
+  const bColor = fLit.addBinding(proxy, 'color', { label: 'Point colour', view: 'color' });
+  const bSize = fLit.addBinding(proxy, 'size', { label: 'Point size', min: 0.05, max: 1, step: 0.01 });
+  const bPower = fLit.addBinding(proxy, 'power', { label: 'Point power', min: 0, max: 8, step: 0.05 });
+  const bDel = fLit.addButton({ title: 'Delete point' }).on('click', () => P().length && remove(sel));
+  const selUI = { refresh() { const none = !P().length; for (const b of [bColor, bSize, bPower, bDel]) b.disabled = none; quietRefresh(); } };
+  return { draw, refresh: () => { sel = Math.min(sel, Math.max(0, P().length - 1)); selUI.refresh(); draw(); } };
+})();
+fLit.addBlade({ view: 'text', label: 'Points', parse: (v) => v, value: 'click the map to add one', disabled: true });
 
 // Glow dots on the preview (Skybox tab, mesh gradient): drag them to move the glows
 let skyActive = false;
@@ -590,11 +701,16 @@ function syncPane() {
   meshHint.hidden = bg !== 'mesh';
   for (const c of photoBtns) c.hidden = bg !== 'photo';
   for (const c of plainColors) c.hidden = bg !== 'plain';
+  litStrength.disabled = !S.scene.light.on;
+  litMap.draw();
   meshDots.update();
 }
 
 pane.on('change', (ev) => {
-  if (ev.target?.key === 'device' && !programmatic) { S.camera.distance = DEVICES[S.device].distance; quietRefresh(); }
+  // changes made in code (setState, undo, the timeline) are applied by their caller already;
+  // reacting here too made every animation frame refresh the whole pane again (Angle Z twice)
+  if (programmatic) return;
+  if (ev.target?.key === 'device') { S.camera.distance = DEVICES[S.device].distance; quietRefresh(); }
   if (ev.target?.key === 'smartAngle' || ev.target?.key === 'roll') { applyBlur(); quietRefresh(); }
   syncPane();
   applyAll();
@@ -741,9 +857,14 @@ window.mockup.ready = (async () => {
 tick();
 // Cases panel (only when the dev server exposes /api/cases)
 syncPane();
-initAnim({ S, pane, stage: document.getElementById('stage'), canvas, setState, hooks, layout, markDirty: () => (dirty = true) });
+litMap.refresh();
+resetHistory();
+// playback applies frames without touching the pane (60 times a second would stutter);
+// the pane is refreshed when the playhead stops
+const applyFrame = (st) => { merge(S, st); applyAll(); };
+initAnim({ S, pane, stage: document.getElementById('stage'), canvas, setState, applyFrame, hooks, layout, markDirty: () => (dirty = true) });
 if (!params.has('render')) window.mockup.ready.then(() => initCases({ pane, sky, S, DEFAULTS, setState, loadScreenURL, frame, settled: window.mockup.settled, hooks, skyBg: fBg, resetHistory, lockCaseMode: () => {
   // the site draws the case background in CSS, the render stays transparent
-  aspectBinding.disabled = true; loadImageBtn.disabled = true; bgBinding.disabled = true;
-  showBinding.label = 'In the render'; showBinding.disabled = true;
+  loadImageBtn.disabled = true; bgBinding.disabled = true;
+  caseMode = true;
 } }));
