@@ -1,6 +1,6 @@
 // Animate: a timeline under the stage. Each keyframe holds the Thing settings (camera,
-// blur, screen, light); between keyframes numbers are eased, everything else switches at
-// the next keyframe. The device and the aspect stay the same for the whole animation.
+// blur, screen, light); see `curve` for how values move between them. The device and the
+// aspect stay the same for the whole animation.
 //
 // Click the track to move the playhead, click a diamond to select that keyframe (edits in
 // the panel then go into it), drag a diamond to retime it.
@@ -13,21 +13,38 @@ const snap = (S) => ({
   screen: { ...S.screen },
   scene: Object.fromEntries(SCENE_KEYS.map((k) => [k, S.scene[k]])),
 });
-const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
-function between(a, b, k) {
-  const out = {};
+// Numbers follow a smooth curve through all keyframes (monotone cubic: the speed carries
+// on through a keyframe instead of stopping at it, and never overshoots a keyframe's
+// value); it eases in at the first keyframe and out at the last. Other values switch at
+// the next keyframe.
+function curve(ks, i, u, get) {
+  const v = (j) => get(ks[j]);
+  const t = (j) => ks[j].t;
+  const slope = (j) => (v(j + 1) - v(j)) / Math.max(1e-6, t(j + 1) - t(j));
+  const tangent = (j) => {
+    if (j <= 0 || j >= ks.length - 1) return 0;          // ease at both ends
+    const a = slope(j - 1), b = slope(j);
+    return a * b <= 0 ? 0 : (2 * a * b) / (a + b);        // harmonic mean: no overshoot
+  };
+  const h = t(i + 1) - t(i), p0 = v(i), p1 = v(i + 1), m0 = tangent(i) * h, m1 = tangent(i + 1) * h;
+  const u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1;
+}
+function between(ks, i, u) {
+  const a = ks[i].state, b = ks[i + 1].state, out = {};
   for (const p of PARTS) {
     out[p] = {};
     for (const key of Object.keys(a[p] || {})) {
       const x = a[p][key], y = b[p]?.[key];
-      out[p][key] = typeof x === 'number' && typeof y === 'number' ? x + (y - x) * k : k < 1 ? x : y;
+      const numeric = ks.every((k) => typeof k.state[p]?.[key] === 'number');
+      out[p][key] = numeric ? curve(ks, i, u, (k) => k.state[p][key]) : u < 1 ? x : y;
     }
   }
   return out;
 }
 
-export function initAnim({ S, pane, stage, canvas, setState, hooks, layout, markDirty }) {
+export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, layout, markDirty }) {
   const A = S.anim;
   let time = 0, selected = null, playing = false, recorder = null, last = 0;
 
@@ -53,17 +70,17 @@ export function initAnim({ S, pane, stage, canvas, setState, hooks, layout, mark
     if (!ks.length) return null;
     if (t <= ks[0].t) return ks[0].state;
     if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].state;
-    const i = ks.findIndex((k) => k.t > t);
-    const a = ks[i - 1], b = ks[i];
-    return between(a.state, b.state, ease((t - a.t) / (b.t - a.t)));
+    const i = ks.findIndex((k) => k.t > t) - 1;
+    return between(ks, i, (t - ks[i].t) / Math.max(1e-6, ks[i + 1].t - ks[i].t));
   }
-  function seek(t, keepSelection) {
+  function seek(t, keepSelection, fast) {
     time = Math.max(0, Math.min(A.duration, t));
     if (!keepSelection) selected = keys().find((k) => Math.abs(k.t - time) < 1e-3) || null;
     const st = stateAt(time);
-    if (st) setState(structuredClone(st));
-    draw();
+    if (st) (fast ? applyFrame : setState)(structuredClone(st));
+    if (fast) drawHead(); else draw();
   }
+  function drawHead() { timeEl.textContent = time.toFixed(2) + 's'; head.style.left = (time / A.duration) * 100 + '%'; }
 
   function draw() {
     bar.style.display = A.enabled ? 'flex' : 'none';
@@ -105,6 +122,7 @@ export function initAnim({ S, pane, stage, canvas, setState, hooks, layout, mark
   function play(on) {
     playing = on;
     if (on) { if (time >= A.duration) time = 0; last = performance.now(); requestAnimationFrame(step); }
+    else seek(time, true); // paused: show the current frame's values in the pane
     draw();
   }
   function step(now) {
@@ -114,8 +132,8 @@ export function initAnim({ S, pane, stage, canvas, setState, hooks, layout, mark
       if (A.loop && !recorder) time %= A.duration;
       else { time = A.duration; playing = false; recorder?.stop(); }
     }
-    seek(time, true); markDirty();
-    if (playing) requestAnimationFrame(step);
+    seek(time, true, playing); markDirty();
+    if (playing) requestAnimationFrame(step); else seek(time, true); // stopped: refresh the pane once
   }
 
   bar.addEventListener('click', (e) => {
