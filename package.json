@@ -1,0 +1,19 @@
+{
+  "name": "mockup-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5273",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@tweakpane/plugin-essentials": "0.2.1",
+    "three": "0.170.0",
+    "tweakpane": "4.0.5"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.1",
+    "vite": "5.4.11"
+  }
+}

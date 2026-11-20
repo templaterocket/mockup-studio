@@ -1,0 +1,6 @@
+node_modules/
+dist/
+out/
+.DS_Store
+# not used by any device in src/devices.js
+public/models/iphone15pro.glb
