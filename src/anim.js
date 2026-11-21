@@ -44,7 +44,7 @@ function between(ks, i, u) {
   return out;
 }
 
-export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, layout, markDirty }) {
+export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, layout, markDirty, syncVideo = () => {} }) {
   const A = S.anim;
   let time = 0, selected = null, playing = false, recorder = null, last = 0;
 
@@ -55,7 +55,7 @@ export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, 
     <span class="tl-time">0.00s</span>
     <div class="tl-track"><div class="tl-head"></div></div>
     <button data-a="add" title="Add a keyframe at the playhead">＋ Key</button>
-    <button data-a="del" title="Delete the selected keyframe" disabled>Delete</button>
+    <button data-a="del" title="Delete the selected keyframe (Delete)" disabled>Delete</button>
     <label title="Length in seconds">⏱ <input type="number" min="0.5" max="60" step="0.5"></label>
     <label title="Play in a loop"><input type="checkbox" data-a="loop"> Loop</label>
     <button data-a="rec" title="Play once and download a WebM">● Record</button>`;
@@ -78,6 +78,7 @@ export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, 
     if (!keepSelection) selected = keys().find((k) => Math.abs(k.t - time) < 1e-3) || null;
     const st = stateAt(time);
     if (st) (fast ? applyFrame : setState)(structuredClone(st));
+    syncVideo(time, playing);
     if (fast) drawHead(); else draw();
   }
   function drawHead() { timeEl.textContent = time.toFixed(2) + 's'; head.style.left = (time / A.duration) * 100 + '%'; }
@@ -121,6 +122,7 @@ export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, 
 
   function play(on) {
     playing = on;
+    syncVideo(time, on);
     if (on) { if (time >= A.duration) time = 0; last = performance.now(); requestAnimationFrame(step); }
     else seek(time, true); // paused: show the current frame's values in the pane
     draw();
@@ -181,6 +183,20 @@ export function initAnim({ S, pane, stage, canvas, setState, applyFrame, hooks, 
   window.addEventListener('keydown', (e) => {
     if (!A.enabled || e.target.closest?.('input, textarea, select')) return;
     if (e.code === 'Space') { e.preventDefault(); play(!playing); }
+    // Delete / Backspace removes the selected keyframe (not in full screen: keys are read-only there)
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !document.body.classList.contains('focus')) {
+      e.preventDefault(); A.keys.splice(A.keys.indexOf(selected), 1); selected = null; draw();
+    }
   });
   draw();
+  // for scripted captures (window.mockup.renderAt): put the playhead at t, as if playing
+  return {
+    showAt(t, asPlaying = true) {
+      const was = playing; playing = asPlaying;
+      time = Math.max(0, Math.min(A.duration, t));
+      const st = stateAt(time); if (st) applyFrame(structuredClone(st));
+      draw(); playing = was;
+      $('[data-a=play]').textContent = asPlaying ? '❚❚' : '▶';
+    },
+  };
 }

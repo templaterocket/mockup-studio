@@ -20,6 +20,10 @@ tilt-shift blur, lighting and a background. The same page is driven headlessly b
 | `src/cases.js` | "Cases" panel for the personal site (only when the dev server answers `/api/cases`) |
 | `src/devices.js` | Device models: file, rotation, how to find the screen mesh, screenshot size, fixes |
 | `src/style.css` | Layout, timeline, dots on the preview, lighting map |
+| `src/theme.css` | Editor look (Web Immersive): fonts, colours, the Tweakpane theme, section cards |
+| `src/ui.css`, `src/ui.js` | Editor chrome around the pane and the preview: section icons, tooltips, the 3D rotation widget (Angle X/Y/Z), preview scrollbars (Position X/Y), full screen (F), progressive blur |
+| `src/icons.js` | Phosphor icons (MIT), inlined SVG strings |
+| `public/fonts/` | Zalando Sans + Host Grotesk (OFL, licences beside them) |
 | `vite.config.js` | Dev-server API for the Cases panel (`/api/cases…`), writes the site's files |
 | `render.mjs` | Headless batch renderer (Playwright + Chrome) |
 | `public/models/*.glb` | Device models (Sketchfab, licences unchecked: see README) |
@@ -33,7 +37,8 @@ await window.mockup.ready;                       // first device loaded
 window.mockup.setState({ device: 'studiodisplay', aspect: '16:9',
   camera: { azimuth: -30, elevation: 11, roll: -4, focal: 85, distance: 2.6 } });
 await window.mockup.settled();                   // after a device change: wait for the model
-await window.mockup.loadScreen('/path/or/url.png');   // or loadScreenData(dataUrl)
+await window.mockup.loadScreen('/path/or/url.png');   // or loadScreenData(dataUrl); .webm/.mp4/.mov = a video
+await window.mockup.renderAt(3.2);               // scripted captures: the timeline at 3.2 s, video on its exact frame
 const png = window.mockup.exportPNG(2400);       // data URL, supersampled 2×
 window.mockup.getState();                        // a copy of S
 window.mockup.screenAspect();                    // w/h of the device screen
@@ -84,7 +89,10 @@ Panel label → state key. Keep the keys: saved shots, presets and the site's re
 - **Export**: `export.width`, `export.supersample`
 - **Animate**: `anim = { enabled, duration, loop, keys: [{ t, state: { camera, blur, screen,
   scene } }] }`. Numbers move along a monotone cubic through all keys (no stop at each key,
-  no overshoot); other values switch at the next key. Device and aspect are fixed.
+  no overshoot); other values switch at the next key. Device and aspect are fixed. A video on
+  the screen follows the timeline (plays with it, shows the exact frame while scrubbing).
+- **Preview quality**: the preview renders at least 2× (no MSAA: the blur pass reads the depth
+  buffer), so edges stay smooth on 1× screens.
 
 ## Personal-site mode (Cases panel)
 

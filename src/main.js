@@ -4,6 +4,7 @@ import { initAnim } from './anim.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Pane } from 'tweakpane';
+import { initUI } from './ui.js';
 import { DEVICES } from './devices.js';
 import { BlurPass, MAX_SAMPLES } from './blur.js';
 
@@ -138,6 +139,7 @@ let screenAspect = 0.5; // w/h of the screen mesh in device space
 const orbitTarget = new THREE.Vector3();
 let imageAspect = 1;
 let screenLabel = 'placeholder';
+let screenVideo = null; // <video> on the screen (a site scroll, an app walkthrough…), else null
 
 function placeholderCanvas() {
   const c = document.createElement('canvas'); c.width = 1170; c.height = 2532;
@@ -154,6 +156,23 @@ function placeholderCanvas() {
 
 function setScreenImage(source, label = 'image') {
   if (screenTex) screenTex.dispose();
+  if (screenVideo && screenVideo !== source) { screenVideo.pause(); screenVideo.removeAttribute('src'); screenVideo.load(); screenVideo = null; }
+  if (source instanceof HTMLVideoElement) {
+    // a video: mipmapped like a screenshot, so small text on a scrolling page does not shimmer
+    // when the screen is drawn smaller than the video (the mips are rebuilt with every frame)
+    screenVideo = source;
+    screenTex = new THREE.VideoTexture(source);
+    screenTex.colorSpace = THREE.SRGBColorSpace;
+    screenTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    screenTex.generateMipmaps = true;
+    screenTex.minFilter = THREE.LinearMipmapLinearFilter;
+    screenTex.center.set(0.5, 0.5);
+    imageAspect = source.videoWidth / source.videoHeight;
+    screenMat.map = screenTex; screenMat.needsUpdate = true;
+    screenLabel = label;
+    applyScreen();
+    return;
+  }
   screenTex = source instanceof HTMLCanvasElement ? new THREE.CanvasTexture(source) : new THREE.Texture(source);
   screenTex.colorSpace = THREE.SRGBColorSpace;
   screenTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -167,7 +186,27 @@ function setScreenImage(source, label = 'image') {
   applyScreen();
 }
 
+// a video on the screen: muted, looping; with Animate on it follows the timeline (syncVideo)
+function loadScreenVideo(url, label = url.slice(0, 40)) {
+  return new Promise((res, rej) => {
+    const v = Object.assign(document.createElement('video'), { muted: true, loop: true, playsInline: true, crossOrigin: 'anonymous', preload: 'auto' });
+    v.onloadeddata = () => { v.onloadeddata = null; setScreenImage(v, label); if (!S.anim.enabled) v.play().catch(() => {}); res(); };
+    v.onerror = () => rej(new Error('cannot load video ' + url));
+    v.src = url;
+  });
+}
+// timeline time → video time: while playing the video runs on its own (resynced if it drifts),
+// while scrubbing or paused it shows the exact frame
+function syncVideo(t, playing) {
+  const v = screenVideo;
+  if (!v || !S.anim.enabled || !v.duration) return;
+  const vt = Math.min(t, v.duration - 0.01);
+  if (playing) { if (Math.abs(v.currentTime - vt) > 0.2) v.currentTime = vt; if (v.paused) v.play().catch(() => {}); }
+  else { if (!v.paused) v.pause(); if (Math.abs(v.currentTime - vt) > 1e-3) v.currentTime = vt; }
+}
+
 function loadScreenURL(url) {
+  if (/\.(webm|mp4|mov|m4v)(\?|#|$)/i.test(url)) return loadScreenVideo(url);
   return new Promise((res, rej) => {
     const img = new Image(); img.crossOrigin = 'anonymous';
     img.onload = () => { setScreenImage(img, url.slice(0, 40)); res(); };
@@ -422,13 +461,16 @@ function applyScene() {
 
 function layout() {
   const stage = document.getElementById('stage').getBoundingClientRect();
-  const pad = 24;
-  const aw = stage.width - pad * 2, ah = stage.height - pad * 2;
+  const pad = document.body.classList.contains('focus') ? 36 : 24; // focus mode: full screen, 36px around
+  const top = parseFloat(getComputedStyle(document.getElementById('stage')).paddingTop) || 0; // the top bar
+  const aw = stage.width - pad * 2, ah = stage.height - top - pad * 2;
   aspectNow = ASPECTS[S.aspect];
   let w = aw, h = aw / aspectNow;
   if (h > ah) { h = ah; w = ah * aspectNow; }
   frame.style.width = Math.floor(w) + 'px'; frame.style.height = Math.floor(h) + 'px';
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // always at least 2 render pixels per screen pixel: the preview has no MSAA (the blur pass reads
+  // the depth buffer), so on a 1× screen this supersampling is what keeps edges from stair-stepping
+  const dpr = Math.max(2, Math.min(window.devicePixelRatio || 1, 2));
   renderer.setPixelRatio(dpr);
   renderer.setSize(Math.floor(w), Math.floor(h), false);
   const bs = renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -451,6 +493,7 @@ function renderNow() {
   blurPass.render(scene, camera);
 }
 function tick() {
+  if (screenVideo && !screenVideo.paused) dirty = true; // a playing video needs every frame
   if (dirty && currentModel) { dirty = false; renderNow(); }
   requestAnimationFrame(tick);
 }
@@ -485,7 +528,8 @@ function downloadPNG() {
 // ───────────────────────── pane ─────────────────────────
 // Cases (when the site API is up) sits on top; below it two tabs: Thing (the device and
 // the camera on it) and Skybox (what is behind it and reflects in it).
-const pane = new Pane({ container: document.getElementById('pane'), title: 'Mockup Studio' });
+// no title: the header above the pane is static (ui.js), nothing collapses the whole pane
+const pane = new Pane({ container: document.getElementById('pane') });
 const tabs = pane.addTab({ pages: [{ title: 'Thing' }, { title: 'Skybox' }] });
 const [thing, sky] = tabs.pages;
 const deviceText = (v) => `${v.label}  ·  ${v.shot[0]}×${v.shot[1]}  ·  ${v.ratio}`;
@@ -496,9 +540,7 @@ const aspectBinding = fDev.addBinding(S, 'aspect', { label: 'Aspect', options: O
 fDev.addBinding(S.anim, 'enabled', { label: 'Animate' });
 
 const fCam = thing.addFolder({ title: 'Camera' });
-fCam.addBinding(S.camera, 'elevation', { label: 'Angle X', min: -89, max: 89, step: 0.5 });
-fCam.addBinding(S.camera, 'azimuth', { label: 'Angle Y', min: -180, max: 180, step: 0.5 });
-fCam.addBinding(S.camera, 'roll', { label: 'Angle Z', min: -90, max: 90, step: 0.5 });
+// Angle X / Y / Z (elevation / azimuth / roll) live in the rotation widget at the top (ui.js)
 fCam.addBinding(S.camera, 'focal', { label: 'Lens (mm)', min: 12, max: 300, step: 1 });
 fCam.addBinding(S.camera, 'distance', { label: 'Distance', min: 0.25, max: 8, step: 0.01 });
 fCam.addBinding(S.camera, 'panX', { label: 'Position X', min: -1.5, max: 1.5, step: 0.005 });
@@ -524,7 +566,7 @@ fDof.addBinding(S.blur, 'dofFocusOffset', { label: 'Focus offset', min: -2, max:
 fDof.addBinding(S.blur, 'dofStrength', { label: 'Strength', min: 0, max: 3, step: 0.01 });
 
 const fScr = thing.addFolder({ title: 'Screen', expanded: false });
-const loadImageBtn = fScr.addButton({ title: 'Load image…' });
+const loadImageBtn = fScr.addButton({ title: 'Load image or video…' });
 loadImageBtn.on('click', () => fileInput.click());
 fScr.addBinding(S.screen, 'align', { label: 'Crop align', options: { Center: 'center', Top: 'top', Bottom: 'bottom' } });
 fScr.addBinding(S.screen, 'brightness', { label: 'Brightness', min: 0.3, max: 1.5, step: 0.01 });
@@ -542,7 +584,8 @@ fLight.addBinding(S.scene, 'grain', { label: 'Grain', min: 0, max: 8, step: 0.1 
 
 const fExp = thing.addFolder({ title: 'Export' });
 fExp.addBinding(S.export, 'width', { label: 'Width px', min: 800, max: 6000, step: 100 });
-fExp.addButton({ title: 'Download PNG' }).on('click', downloadPNG);
+const dlBtn = fExp.addButton({ title: 'Download PNG' }).on('click', downloadPNG);
+dlBtn.element.classList.add('is-primary');
 fExp.addButton({ title: 'Save preset (JSON)' }).on('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }));
@@ -594,7 +637,7 @@ const litMap = (() => {
   const P = () => S.scene.light.points;
   function draw() {
     const g = cv.getContext('2d'), W = cv.width, H = cv.height;
-    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#131417'; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#0d0d0d'; g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
     for (const p of P()) {
       const r = g.createRadialGradient(p.x * W, p.y * H, 0, p.x * W, p.y * H, p.size * W * 0.5);
@@ -755,7 +798,7 @@ window.addEventListener('keydown', (e) => {
 }, true);
 
 // ───────────────────────── inputs ─────────────────────────
-const fileInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+const fileInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*,video/*' });
 fileInput.onchange = () => fileInput.files[0] && loadFile(fileInput.files[0]);
 const presetInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json' });
 presetInput.onchange = async () => presetInput.files[0] && setState(JSON.parse(await presetInput.files[0].text()));
@@ -769,12 +812,14 @@ photoInput.onchange = () => {
 };
 function loadFile(f) {
   const url = URL.createObjectURL(f);
+  // a video keeps reading from its blob URL, so that one stays alive
+  if (f.type.startsWith('video/')) return loadScreenVideo(url, f.name);
   return loadScreenURL(url).then(() => URL.revokeObjectURL(url));
 }
 const dropEl = document.getElementById('drop');
 window.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('on'); });
 window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) dropEl.classList.remove('on'); });
-window.addEventListener('drop', (e) => { e.preventDefault(); dropEl.classList.remove('on'); const f = e.dataTransfer.files[0]; f && f.type.startsWith('image/') && loadFile(f); });
+window.addEventListener('drop', (e) => { e.preventDefault(); dropEl.classList.remove('on'); const f = e.dataTransfer.files[0]; f && /^(image|video)\//.test(f.type) && loadFile(f); });
 
 // drag = orbit, shift-drag = pan, wheel = distance
 let drag = null;
@@ -825,6 +870,23 @@ window.mockup = {
   settled: async () => { while (loading || loadedDevice !== S.device) await new Promise((r) => setTimeout(r, 30)); applyAll(); },
   devices: () => Object.fromEntries(Object.entries(DEVICES).map(([k, v]) => [k, v.label])),
   ready: null,
+  // scripted captures: show the timeline at t as if it were playing, with the video on the
+  // exact frame for t, and render once. Resolves when the frame is on screen.
+  async renderAt(t, { playing = true } = {}) {
+    timeline.showAt(t, playing);
+    const v = screenVideo;
+    if (v) {
+      v.pause();
+      const vt = Math.min(t, v.duration - 0.001);
+      if (Math.abs(v.currentTime - vt) > 1e-4) {
+        await new Promise((r) => { v.addEventListener('seeked', r, { once: true }); v.currentTime = vt; });
+      }
+      screenTex.needsUpdate = true;
+    }
+    renderNow(); dirty = false;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  },
+  screenVideo: () => screenVideo,
   async tryDevice(id, screen, rotation) {
     if (screen) DEVICES[id].screen = screen;
     if (rotation) DEVICES[id].rotation = rotation;
@@ -862,7 +924,8 @@ resetHistory();
 // playback applies frames without touching the pane (60 times a second would stutter);
 // the pane is refreshed when the playhead stops
 const applyFrame = (st) => { merge(S, st); applyAll(); };
-initAnim({ S, pane, stage: document.getElementById('stage'), canvas, setState, applyFrame, hooks, layout, markDirty: () => (dirty = true) });
+const timeline = initAnim({ S, pane, stage: document.getElementById('stage'), canvas, setState, applyFrame, hooks, layout, markDirty: () => (dirty = true), syncVideo });
+initUI({ S, DEFAULTS, frame, stage: document.getElementById('stage'), paneEl: document.getElementById('pane'), fCam, applyAll, quietRefresh, hooks, layout });
 if (!params.has('render')) window.mockup.ready.then(() => initCases({ pane, sky, S, DEFAULTS, setState, loadScreenURL, frame, settled: window.mockup.settled, hooks, skyBg: fBg, resetHistory, lockCaseMode: () => {
   // the site draws the case background in CSS, the render stays transparent
   loadImageBtn.disabled = true; bgBinding.disabled = true;

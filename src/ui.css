@@ -1,0 +1,120 @@
+/* ───────── floating layout: no backing behind the settings ───────── */
+body{background:var(--ink) radial-gradient(#ffffff1f 1px,transparent 1.3px) 0 0/16px 16px}
+#stage{background:none}
+#pane{top:0;background:transparent;border-left:0;z-index:2}
+#pane{--tp-base-background-color:transparent}
+#pane .tp-rotv{background:transparent}
+
+/* progressive blur at the bottom of the list (only while there is more to scroll);
+   the top is handled by the sticky tab bar */
+.pane-fade{position:fixed;right:0;width:340px;z-index:3;pointer-events:none;opacity:0}
+.pane-fade.on{opacity:1}
+.pane-fade-bottom{bottom:0;height:72px}
+.pane-fade i{position:absolute;inset:0}
+.pane-fade-bottom i:nth-child(1){backdrop-filter:blur(.5px);-webkit-backdrop-filter:blur(.5px);mask:linear-gradient(to bottom,transparent 0%,#000 20%,#000 40%,transparent 60%)}
+.pane-fade-bottom i:nth-child(2){backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);mask:linear-gradient(to bottom,transparent 20%,#000 40%,#000 60%,transparent 80%)}
+.pane-fade-bottom i:nth-child(3){backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);mask:linear-gradient(to bottom,transparent 40%,#000 60%,#000 80%,transparent 100%)}
+.pane-fade-bottom i:nth-child(4){backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);mask:linear-gradient(to bottom,transparent 60%,#000 80%)}
+.pane-fade-bottom i:nth-child(5){backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);mask:linear-gradient(to bottom,transparent 80%,#000 100%)}
+.pane-fade-bottom::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent,#0a0a0a99)}
+
+/* ───────── section icons ───────── */
+#pane .tp-fldv.has-ico>.tp-fldv_b{display:flex;align-items:center;gap:10px}
+.sec-ico{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:7px;
+  color:var(--acc);background:color-mix(in srgb,var(--acc) 16%,transparent)}
+.sec-ico svg{width:15px;height:15px;display:block}
+
+/* ───────── fewer duplicates inside controls ───────── */
+/* the number next to a slider: type into it, the slider is the drag (no second drag knob) */
+#pane .tp-sldtxtv .tp-txtv_k{display:none}
+#pane .tp-sldtxtv .tp-txtv_i{cursor:text}
+/* colour popup: picker only, the hex field is already in the row */
+#pane .tp-colpv_rgb{display:none}
+#pane .tp-colpv_hsv{margin-bottom:0}
+
+/* ───────── 3D rotation widget ───────── */
+.rot{padding:0 12px 6px}
+.rot-view{position:relative;z-index:0;contain:paint;isolation:isolate;height:150px;margin-bottom:10px;border-radius:8px;display:grid;place-items:center;overflow:hidden;cursor:grab;touch-action:none;user-select:none;
+  perspective:520px;background:#ffffff08;box-shadow:inset 0 0 0 1px #ffffff0f;transition:background .2s var(--ease)}
+.rot-view:hover{background:#ffffff0b}
+.rot-view.drag{cursor:grabbing;background:#ffffff0e}
+.rot-cube{position:relative;width:62px;height:62px;transform-style:preserve-3d}
+.rot-cube i{position:absolute;inset:0;border:1px solid #ffffff26;border-radius:3px;background:linear-gradient(160deg,#2c2c2c,#1c1c1c);backface-visibility:hidden}
+.rot-cube .f-front{transform:translateZ(31px);background:linear-gradient(160deg,#3d3d3d,#2a2a2a);border-color:#ffffff47}
+.rot-cube .f-top{background:linear-gradient(160deg,#343434,#262626)}
+.rot-cube .f-back{transform:rotateY(180deg) translateZ(31px)}
+.rot-cube .f-right{transform:rotateY(90deg) translateZ(31px)}
+.rot-cube .f-left{transform:rotateY(-90deg) translateZ(31px)}
+.rot-cube .f-top{transform:rotateX(90deg) translateZ(31px)}
+.rot-cube .f-bottom{transform:rotateX(-90deg) translateZ(31px)}
+.rot-cube .f-front b{position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#3cff3c;box-shadow:0 0 10px #3cff3c99}
+.rot-reset{position:absolute;right:8px;bottom:8px;width:28px;height:28px;padding:0;border:0;border-radius:6px;display:grid;place-items:center;background:transparent;color:var(--text-dim);cursor:pointer;transition:background .15s var(--ease),color .15s var(--ease)}
+.rot-reset:hover{background:var(--field-hover);color:#fff}
+.rot-reset svg{width:16px;height:16px}
+.rot-rows{display:flex;align-items:flex-start;gap:8px}
+.rot-label{flex:1;font-size:13px;line-height:28px;color:var(--text-dim)}
+.rot-fields{flex:none;width:164px;display:flex;flex-direction:column;gap:6px}
+.rot-field{display:flex;align-items:center;height:28px;border-radius:var(--radius);background:var(--field);transition:background .15s var(--ease),box-shadow .15s var(--ease)}
+.rot-field:hover{background:var(--field-hover)}
+.rot-field:focus-within,.rot-field.scrub{background:var(--field-hover);box-shadow:inset 0 0 0 1px #ffffff40}
+.rot-ax{flex:none;align-self:stretch;width:26px;display:grid;place-items:center;font-size:13px;color:#fff;cursor:ew-resize;user-select:none;touch-action:none}
+.rot-field input{flex:1;min-width:0;height:100%;padding:0 8px 0 0;border:0;outline:0;background:transparent;color:#fff;font:400 13px var(--font);letter-spacing:-0.015em;font-variant-numeric:tabular-nums}
+
+/* ───────── preview scrollbars ───────── */
+.pv-bar{position:absolute;z-index:3;border-radius:999px;background:#ffffff0f;cursor:pointer;touch-action:none;transition:background .2s var(--ease),height .2s var(--ease),width .2s var(--ease)}
+.pv-bar::before{content:"";position:absolute;inset:-7px}
+.pv-bar i{position:absolute;border-radius:inherit;background:#ffffff4d;transition:background .2s var(--ease)}
+.pv-bar-x{left:0;right:0;bottom:-16px;height:6px}
+.pv-bar-x i{top:0;bottom:0;width:28%}
+.pv-bar-y{top:0;bottom:0;right:-16px;width:6px}
+.pv-bar-y i{left:0;right:0;height:28%}
+.pv-bar:hover,.pv-bar.drag{background:#ffffff1a}
+.pv-bar-x:hover,.pv-bar-x.drag{height:8px;bottom:-17px}
+.pv-bar-y:hover,.pv-bar-y.drag{width:8px;right:-17px}
+.pv-bar:hover i,.pv-bar.drag i{background:#ffffffb3}
+
+/* ───────── timeline: a floating card like the sections ───────── */
+#timeline{left:12px;right:352px;bottom:12px;height:56px;border:0;border-radius:12px;background:#141414;box-shadow:inset 0 0 0 1px #ffffff14,0 1px 0 #ffffff05,0 8px 24px #0006}
+#stage.with-timeline{bottom:80px}
+
+/* ───────── focus mode ───────── */
+.stage-bar{position:absolute;top:16px;left:16px;right:16px;z-index:4;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+.stage-bar>*{pointer-events:auto}
+.wordmark{padding-left:8px;font:500 16px/1 var(--font-logo);letter-spacing:-0.02em;color:var(--text);user-select:none;transition:opacity .35s var(--ease),transform .35s var(--ease)}
+body.focus .wordmark{opacity:0;transform:translateY(-4px);pointer-events:none}
+.focus-btn{position:relative;margin-left:auto;width:36px;height:36px;padding:0;display:grid;place-items:center;border-radius:999px;border:1px solid #ffffff38;
+  background:#14141499;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#fff;cursor:pointer;transition:background .2s var(--ease),border-color .2s var(--ease)}
+.focus-btn:hover{background:#ffffff1a;border-color:#ffffff66}
+.focus-btn svg{width:18px;height:18px}
+#focus-veil{position:fixed;inset:0;z-index:15;opacity:0;pointer-events:none;background:#0a0a0a8c;-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);transition:opacity .55s var(--ease)}
+body.focus #focus-veil{opacity:1;pointer-events:auto}
+#stage{z-index:20;box-sizing:border-box;padding-top:40px} /* room for the top bar (wordmark + full screen) */
+body.focus #stage{padding-top:0}
+body.focus #stage{inset:0 !important}
+body.focus #frame{box-shadow:0 0 0 1px #ffffff1a,0 40px 120px #000}
+#pane{transition:transform .55s var(--ease)}
+.pane-fade{transition:opacity .3s var(--ease),transform .55s var(--ease)}
+body.focus #pane,body.focus .pane-fade{transform:translateX(24px)}
+/* focus mode + Animate: a mini player over the bottom of the preview, play / pause and the track only */
+@keyframes mini-in{from{opacity:0;translate:0 10px}}
+body.focus #timeline{left:50%;right:auto;bottom:52px;z-index:25;width:min(520px,calc(100vw - 144px));height:44px;padding:0 14px 0 6px;gap:10px;
+  transform:translateX(-50%);border-radius:999px;background:#141414cc;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  box-shadow:inset 0 0 0 1px #ffffff1a,0 12px 32px #0009;animation:mini-in .4s var(--ease) .15s both}
+body.focus #timeline>:not([data-a=play]):not(.tl-track){display:none}
+body.focus #timeline [data-a=play]{flex:none;width:32px;height:32px;padding:0;border-radius:50%}
+body.focus #timeline .tl-track{height:20px}
+
+/* ───────── tooltips (icon-only buttons) ───────── */
+.tip{position:fixed;z-index:100;left:0;top:0;pointer-events:none;padding:7px 11px;border-radius:9px;background:#fff;color:#0a0a0a;
+  font:500 12px/1.2 var(--font);letter-spacing:-0.01em;white-space:nowrap;box-shadow:0 8px 24px #0009,0 0 0 1px #0000000d;
+  opacity:0;transform:translateY(4px);transition:opacity .14s var(--ease),transform .14s var(--ease)}
+.tip.below{transform:translateY(-4px)}
+.tip.on{opacity:1;transform:none}
+.tip::after{content:"";position:absolute;left:var(--cx,50%);top:100%;width:0;height:0;margin-left:-6px;border:6px solid transparent;border-top-color:#fff;border-bottom:0}
+.tip.below::after{top:auto;bottom:100%;border:6px solid transparent;border-bottom-color:#fff;border-top:0}
+.focus-btn:focus,.rot-reset:focus{outline:none}
+.focus-btn:focus-visible,.rot-reset:focus-visible{outline:2px solid #ffffff80;outline-offset:2px}
+
+/* full screen: keyframes are shown, not edited */
+body.focus #timeline .tl-key{pointer-events:none;opacity:.45;cursor:default}
+body.focus #timeline .tl-key.on{background:var(--text-dim);box-shadow:none}
