@@ -68,4 +68,8 @@ fills on the case page; if you change it, the page crops the image to the slot (
   keys, a slider drag, a mouse drag on the preview) is one step; undo stays within one case screen.
 - **Animate** (`src/anim.js`): a timeline under the stage. "＋ Key" stores the Thing settings at
   the playhead; edits go into the selected keyframe; numbers are eased between keyframes.
-  Space plays, "● Record" plays once and downloads a WebM of the preview.
+  Space plays, "● Record" plays once and downloads a WebM of the preview. Delete removes the
+  selected keyframe. A video on the screen (Screen → Load image or video…, or drop a .webm /
+  .mp4 / .mov) plays along with the timeline.
+- **Preview**: drag to rotate, shift-drag to move, wheel for distance; the scrollbars on its
+  edges move it too, F (or the button top right) shows it full screen, Esc goes back.
